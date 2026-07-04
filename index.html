@@ -70,7 +70,7 @@
         <div id="dashboard-content" class="space-y-8">
 
             <!-- Control Panel -->
-            <div id="control-panel" class="flex justify-between items-center mb-6">
+            <div id="control-panel" class="flex flex-wrap justify-between items-center mb-3 gap-3">
                 <!-- 주차 선택 -->
                 <div class="bg-white p-3 rounded-xl shadow-md border border-slate-200 flex items-center space-x-3">
                     <span class="text-lg font-bold text-slate-700 px-2">주차 선택:</span>
@@ -81,6 +81,12 @@
                     </select>
                 </div>
 
+                <!-- 최근 3주 버튼 -->
+                <button id="recent-3weeks-btn"
+                    class="bg-amber-500 hover:bg-amber-600 text-white text-xl font-bold py-3 px-8 rounded-xl shadow-md transition flex items-center gap-2">
+                    📅 최근 3주 보기
+                </button>
+
                 <!-- 데이터 선택 -->
                 <div class="bg-white p-3 rounded-xl shadow-md border border-slate-200 flex items-center space-x-3">
                     <span class="text-lg font-bold text-slate-700 px-2">데이터 선택:</span>
@@ -90,6 +96,10 @@
                         <option value="shopping">홈쇼핑 포함시</option>
                     </select>
                 </div>
+            </div>
+
+            <!-- 최근 3주 모드 인디케이터 -->
+            <div id="week-indicator" class="hidden bg-amber-50 border border-amber-200 rounded-xl px-5 py-3 text-amber-800 text-sm mb-4">
             </div>
 
             <!-- Key Metrics -->
@@ -425,6 +435,11 @@
             long_haul: null
         };
 
+        // Multi-week state
+        let currentViewMode = 'single'; // 'single' or 'multi3'
+        let currentMultiWeekDatasets = null;
+        let existingWeeks = [];
+
         // Initialize Application
         document.addEventListener('DOMContentLoaded', async () => {
             // Password Protection
@@ -484,12 +499,12 @@
                 // To avoid sending 60 requests all at once which could be bad practice, 
                 // we'll fetch them individually or in small batches. 
                 // For a localized tool, simple sequential or chunked checking is fine.
-                const existingWeeks = [];
+                const foundWeeks = [];
                 for (let w of possibleWeeks) {
                     try {
                         const res = await fetch(`${w}.json`, { method: 'HEAD' });
                         if (res.ok) {
-                            existingWeeks.push(w);
+                            foundWeeks.push(w);
                         }
                     } catch (e) {
                         // File does not exist or fetch failed, move on
@@ -498,8 +513,9 @@
 
                 // If none found by HEAD (some servers block HEAD), we fallback to our manual fallback logic, or just assume standard.
                 // However, since we are dealing with local/GitHub Pages, HEAD works.
-                if (existingWeeks.length > 0) {
-                    existingWeeks.forEach(w => {
+                if (foundWeeks.length > 0) {
+                    existingWeeks = foundWeeks; // 최근 3주 기능을 위해 외부 변수에 저장
+                    foundWeeks.forEach(w => {
                         const opt = document.createElement('option');
                         opt.value = w;
                         opt.textContent = w;
@@ -509,6 +525,7 @@
                     // Fallback just in case fetch HEAD is blocked by security policies
                     console.warn("Could not auto-detect files. Ensure they exist and are accessible.");
                     const fallbackWeeks = ['1월 4주차', '2월 1주차', '2월 2주차', '2월 3주차', '2월 4주차', '2월 전체'];
+                    existingWeeks = fallbackWeeks; // 최근 3주 기능을 위해 외부 변수에 저장
                     fallbackWeeks.forEach(w => {
                         const opt = document.createElement('option');
                         opt.value = w;
@@ -590,13 +607,25 @@
             }
 
             weekSelect.addEventListener('change', (e) => {
+                // 멀티위크 모드 해제
+                currentViewMode = 'single';
+                currentMultiWeekDatasets = null;
+                recent3WeeksBtn.classList.remove('ring-4', 'ring-amber-300');
+                const weekIndicator = document.getElementById('week-indicator');
+                if (weekIndicator) weekIndicator.classList.add('hidden');
                 loadWeekData(e.target.value);
             });
 
             dataSourceSelect.addEventListener('change', (e) => {
                 const mode = e.target.value;
-                const dataToShow = globalWorkData[mode];
 
+                // 최근 3주 모드일 때 데이터 소스 변경 처리
+                if (currentViewMode === 'multi3' && currentMultiWeekDatasets) {
+                    renderMultiWeekDashboard(currentMultiWeekDatasets, mode);
+                    return;
+                }
+
+                const dataToShow = globalWorkData[mode];
                 if (!dataToShow || dataToShow.length === 0) {
                     if (weekSelect.value) {
                         alert("해당 조건의 데이터가 없습니다.");
@@ -604,6 +633,60 @@
                     return;
                 }
                 renderDashboard(dataToShow);
+            });
+
+            // 최근 3주 버튼 클릭 핸들러
+            const recent3WeeksBtn = document.getElementById('recent-3weeks-btn');
+            recent3WeeksBtn.addEventListener('click', async () => {
+                if (existingWeeks.length === 0) {
+                    alert('주차 데이터를 먼저 불러와야 합니다.');
+                    return;
+                }
+
+                // 가장 최근 3개 주차
+                const recentWeeks = existingWeeks.slice(-3);
+
+                // 주차 선택 초기화 및 모드 전환
+                weekSelect.value = '';
+                currentViewMode = 'multi3';
+
+                // 버튼 활성화 강조
+                recent3WeeksBtn.classList.add('ring-4', 'ring-amber-300');
+
+                // 헤더 업데이트
+                mainTitle.innerHTML = `최근 3주 예약현황 <span class="text-xl font-normal text-blue-200 ml-2" id="sub-title"></span>`;
+                noticeText.textContent = `최근 3주 (${recentWeeks.join(' / ')}) 예약 현황을 한눈에 비교합니다.`;
+
+                // 주차 인디케이터 표시
+                const weekIndicator = document.getElementById('week-indicator');
+                if (weekIndicator) {
+                    weekIndicator.innerHTML = `📅 <span class="font-semibold">최근 3주 비교 중:</span> ${recentWeeks.join(' → ')} &nbsp;|&nbsp; <span class="text-xs text-amber-600">차트의 진한 파란색이 가장 최근 주차입니다</span>`;
+                    weekIndicator.classList.remove('hidden');
+                }
+
+                try {
+                    const allDatasets = await Promise.all(
+                        recentWeeks.map(async (week) => {
+                            const response = await fetch(`${week}.json`);
+                            const data = await response.json();
+                            return {
+                                week,
+                                summary: parseRawJSON(data['홈쇼핑 제외시'] || []),
+                                shopping: parseRawJSON(data['홈쇼핑 포함시'] || [])
+                            };
+                        })
+                    );
+
+                    currentMultiWeekDatasets = allDatasets;
+                    const mode = dataSourceSelect.value;
+                    renderMultiWeekDashboard(allDatasets, mode);
+
+                } catch (error) {
+                    console.error('최근 3주 로드 오류:', error);
+                    alert('최근 3주 데이터를 불러오는 중 오류가 발생했습니다.');
+                    currentViewMode = 'single';
+                    recent3WeeksBtn.classList.remove('ring-4', 'ring-amber-300');
+                }
             });
 
             // 처음 접속 시에는 선택된 주차가 없으므로 빈 화면으로 시작
@@ -830,6 +913,104 @@
 
             const longContainer = document.getElementById('insight-long-haul');
             if (longContainer) longContainer.innerHTML = getInsightHTML('long_haul', '장거리');
+        }
+
+        // =============================================
+        // 최근 3주 비교 렌더링 함수
+        // =============================================
+
+        function renderMultiWeekDashboard(datasets, mode) {
+            const weekData = datasets.map(d => ({
+                week: d.week,
+                data: d[mode] || []
+            }));
+
+            // 가장 최근 주차의 데이터를 기준으로 요약 지표/인사이트/테이블 표시
+            const latestData = weekData[weekData.length - 1].data;
+
+            // 요약 지표 업데이트 (최근 주차 기준)
+            const total2025 = latestData.reduce((sum, d) => sum + d.v2025, 0);
+            const total2026 = latestData.reduce((sum, d) => sum + d.v2026, 0);
+            const growth = total2025 ? ((total2026 - total2025) / total2025 * 100).toFixed(1) : 0;
+
+            document.getElementById('total-2025').textContent = Math.round(total2025).toLocaleString();
+            document.getElementById('total-2026').textContent = Math.round(total2026).toLocaleString();
+            document.getElementById('growth-rate').textContent = `${growth > 0 ? '+' : ''}${growth}%`;
+            document.getElementById('growth-rate').className = `text-3xl font-bold mt-2 ${growth >= 0 ? 'text-emerald-600' : 'text-red-600'}`;
+
+            // 3주 비교 차트 렌더링
+            renderMultiWeekChart('shortHaulChart', weekData, 'se_asia', 'se_asia');
+            renderMultiWeekChart('neAsiaChart', weekData, 'ne_asia', 'ne_asia');
+            renderMultiWeekChart('longHaulChart', weekData, 'long_haul', 'long_haul');
+
+            // 테이블과 인사이트는 최근 주차 기준
+            renderTables(latestData);
+            try { generateInsights(latestData); } catch (e) { console.error(e); }
+        }
+
+        function renderMultiWeekChart(canvasId, weekData, category, instanceKey) {
+            // 최근 주차 기준으로 노선 순서 결정 (2026 예약인원 내림차순)
+            const latestCatData = weekData[weekData.length - 1].data
+                .filter(d => d.category === category)
+                .sort((a, b) => b.v2026 - a.v2026);
+
+            const routes = latestCatData.map(d => d.route);
+
+            // 2025 기준선: 최근 주차의 2025 데이터 (회색)
+            const ref2025 = routes.map(route => {
+                const found = latestCatData.find(d => d.route === route);
+                return found ? found.v2025 : 0;
+            });
+
+            // 각 주차별 2026 색상: 연파랑 → 중파랑 → 진파랑 (시간 흐름)
+            const colors2026 = ['#93C5FD', '#2563EB', '#1E3A8A'];
+
+            const datasets = [
+                {
+                    label: '2025년 (기준)',
+                    data: ref2025,
+                    backgroundColor: '#CBD5E1',
+                    borderRadius: 4
+                },
+                ...weekData.map((wd, idx) => {
+                    const catData = wd.data.filter(d => d.category === category);
+                    const vals = routes.map(route => {
+                        const found = catData.find(d => d.route === route);
+                        return found ? found.v2026 : 0;
+                    });
+                    return {
+                        label: `2026 ${wd.week}`,
+                        data: vals,
+                        backgroundColor: colors2026[idx % colors2026.length],
+                        borderRadius: 4
+                    };
+                })
+            ];
+
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            if (chartInstances[instanceKey]) {
+                chartInstances[instanceKey].destroy();
+            }
+            chartInstances[instanceKey] = new Chart(ctx, {
+                type: 'bar',
+                data: { labels: routes, datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top' },
+                        tooltip: { mode: 'index', intersect: false }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: '#f1f5f9' },
+                            ticks: { callback: function (value) { if (value % 1 === 0) return value.toLocaleString(); } }
+                        },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
         }
     </script>
 </body>
