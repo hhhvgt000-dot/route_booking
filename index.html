@@ -71,7 +71,7 @@
 
             <!-- Control Panel -->
             <div id="control-panel" class="flex flex-wrap justify-between items-center mb-3 gap-3">
-                <!-- 주차 선택 -->
+                <!-- 주차 선택 + 최근 3주 조회 버튼 -->
                 <div class="bg-white p-3 rounded-xl shadow-md border border-slate-200 flex items-center space-x-3">
                     <span class="text-lg font-bold text-slate-700 px-2">주차 선택:</span>
                     <select id="week-select"
@@ -79,13 +79,11 @@
                         <option value="">주차를 선택해주세요</option>
                         <!-- Options will be populated automatically -->
                     </select>
+                    <button id="recent-3weeks-btn"
+                        class="bg-slate-600 hover:bg-slate-700 text-white text-base font-bold py-3 px-5 rounded-lg shadow-sm transition whitespace-nowrap">
+                        최근 3주 조회
+                    </button>
                 </div>
-
-                <!-- 최근 3주 버튼 -->
-                <button id="recent-3weeks-btn"
-                    class="bg-amber-500 hover:bg-amber-600 text-white text-xl font-bold py-3 px-8 rounded-xl shadow-md transition flex items-center gap-2">
-                    📅 최근 3주 보기
-                </button>
 
                 <!-- 데이터 선택 -->
                 <div class="bg-white p-3 rounded-xl shadow-md border border-slate-200 flex items-center space-x-3">
@@ -98,9 +96,8 @@
                 </div>
             </div>
 
-            <!-- 최근 3주 모드 인디케이터 -->
-            <div id="week-indicator" class="hidden bg-amber-50 border border-amber-200 rounded-xl px-5 py-3 text-amber-800 text-sm mb-4">
-            </div>
+            <!-- Single-week 뷰 (기본 표시) -->
+            <div id="single-week-view" class="space-y-8">
 
             <!-- Key Metrics -->
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -417,7 +414,13 @@
                     </div>
                 </div>
             </div>
-        </div>
+        </div> <!-- /single-week-view -->
+
+            <!-- Multi-week 뷰 (최근 3주 모드, 기본 숨김) -->
+            <div id="multi-week-view" class="hidden space-y-8">
+            </div>
+
+        </div> <!-- /dashboard-content -->
 
     </main>
 
@@ -607,29 +610,30 @@
             }
 
             weekSelect.addEventListener('change', (e) => {
-                // 멀티위크 모드 해제
-                currentViewMode = 'single';
-                currentMultiWeekDatasets = null;
-                recent3WeeksBtn.classList.remove('ring-4', 'ring-amber-300');
-                const weekIndicator = document.getElementById('week-indicator');
-                if (weekIndicator) weekIndicator.classList.add('hidden');
+                // 멀티위크 모드 해제 → 싱글 뷰로 전환
+                if (currentViewMode === 'multi3') {
+                    currentViewMode = 'single';
+                    currentMultiWeekDatasets = null;
+                    recent3WeeksBtn.classList.remove('ring-4', 'ring-amber-300');
+                    // 멀티위크 차트 인스턴스 정리
+                    Object.values(multiChartInstances).forEach(c => c && c.destroy());
+                    multiChartInstances = {};
+                    document.getElementById('multi-week-view').innerHTML = '';
+                    document.getElementById('multi-week-view').classList.add('hidden');
+                    document.getElementById('single-week-view').classList.remove('hidden');
+                }
                 loadWeekData(e.target.value);
             });
 
             dataSourceSelect.addEventListener('change', (e) => {
                 const mode = e.target.value;
-
-                // 최근 3주 모드일 때 데이터 소스 변경 처리
                 if (currentViewMode === 'multi3' && currentMultiWeekDatasets) {
                     renderMultiWeekDashboard(currentMultiWeekDatasets, mode);
                     return;
                 }
-
                 const dataToShow = globalWorkData[mode];
                 if (!dataToShow || dataToShow.length === 0) {
-                    if (weekSelect.value) {
-                        alert("해당 조건의 데이터가 없습니다.");
-                    }
+                    if (weekSelect.value) alert("해당 조건의 데이터가 없습니다.");
                     return;
                 }
                 renderDashboard(dataToShow);
@@ -643,26 +647,25 @@
                     return;
                 }
 
-                // 가장 최근 3개 주차
-                const recentWeeks = existingWeeks.slice(-3);
+                // "전체" 제외 후 가장 최근 3개 주차
+                const filteredWeeks = existingWeeks.filter(w => !w.includes('전체'));
+                if (filteredWeeks.length === 0) {
+                    alert('주차 데이터가 없습니다.');
+                    return;
+                }
+                const recentWeeks = filteredWeeks.slice(-3);
 
-                // 주차 선택 초기화 및 모드 전환
                 weekSelect.value = '';
                 currentViewMode = 'multi3';
-
-                // 버튼 활성화 강조
                 recent3WeeksBtn.classList.add('ring-4', 'ring-amber-300');
 
                 // 헤더 업데이트
                 mainTitle.innerHTML = `최근 3주 예약현황 <span class="text-xl font-normal text-blue-200 ml-2" id="sub-title"></span>`;
-                noticeText.textContent = `최근 3주 (${recentWeeks.join(' / ')}) 예약 현황을 한눈에 비교합니다.`;
+                noticeText.textContent = `최근 3주 (${recentWeeks.join(' / ')}) 예약 현황을 비교합니다.`;
 
-                // 주차 인디케이터 표시
-                const weekIndicator = document.getElementById('week-indicator');
-                if (weekIndicator) {
-                    weekIndicator.innerHTML = `📅 <span class="font-semibold">최근 3주 비교 중:</span> ${recentWeeks.join(' → ')} &nbsp;|&nbsp; <span class="text-xs text-amber-600">차트의 진한 파란색이 가장 최근 주차입니다</span>`;
-                    weekIndicator.classList.remove('hidden');
-                }
+                // 뷰 전환
+                document.getElementById('single-week-view').classList.add('hidden');
+                document.getElementById('multi-week-view').classList.remove('hidden');
 
                 try {
                     const allDatasets = await Promise.all(
@@ -678,14 +681,15 @@
                     );
 
                     currentMultiWeekDatasets = allDatasets;
-                    const mode = dataSourceSelect.value;
-                    renderMultiWeekDashboard(allDatasets, mode);
+                    renderMultiWeekDashboard(allDatasets, dataSourceSelect.value);
 
                 } catch (error) {
                     console.error('최근 3주 로드 오류:', error);
                     alert('최근 3주 데이터를 불러오는 중 오류가 발생했습니다.');
                     currentViewMode = 'single';
                     recent3WeeksBtn.classList.remove('ring-4', 'ring-amber-300');
+                    document.getElementById('single-week-view').classList.remove('hidden');
+                    document.getElementById('multi-week-view').classList.add('hidden');
                 }
             });
 
@@ -916,8 +920,9 @@
         }
 
         // =============================================
-        // 최근 3주 비교 렌더링 함수
+        // 최근 3주 비교 렌더링 함수 (동적 뷰 생성)
         // =============================================
+        let multiChartInstances = {};
 
         function renderMultiWeekDashboard(datasets, mode) {
             const weekData = datasets.map(d => ({
@@ -925,75 +930,121 @@
                 data: d[mode] || []
             }));
 
-            // 가장 최근 주차의 데이터를 기준으로 요약 지표/인사이트/테이블 표시
-            const latestData = weekData[weekData.length - 1].data;
+            // 기존 멀티위크 차트 정리
+            Object.values(multiChartInstances).forEach(c => c && c.destroy());
+            multiChartInstances = {};
 
-            // 요약 지표 업데이트 (최근 주차 기준)
-            const total2025 = latestData.reduce((sum, d) => sum + d.v2025, 0);
-            const total2026 = latestData.reduce((sum, d) => sum + d.v2026, 0);
-            const growth = total2025 ? ((total2026 - total2025) / total2025 * 100).toFixed(1) : 0;
+            const mwView = document.getElementById('multi-week-view');
 
-            document.getElementById('total-2025').textContent = Math.round(total2025).toLocaleString();
-            document.getElementById('total-2026').textContent = Math.round(total2026).toLocaleString();
-            document.getElementById('growth-rate').textContent = `${growth > 0 ? '+' : ''}${growth}%`;
-            document.getElementById('growth-rate').className = `text-3xl font-bold mt-2 ${growth >= 0 ? 'text-emerald-600' : 'text-red-600'}`;
+            // ── 1. 3주 요약 카드 ──────────────────────────────────────
+            const summaryCards = weekData.map(wd => {
+                const t2025 = wd.data.reduce((s, d) => s + d.v2025, 0);
+                const t2026 = wd.data.reduce((s, d) => s + d.v2026, 0);
+                const gr = t2025 ? ((t2026 - t2025) / t2025 * 100).toFixed(1) : '0.0';
+                const grColor = Number(gr) >= 0 ? 'text-emerald-600' : 'text-red-600';
+                const grSign = Number(gr) > 0 ? '+' : '';
+                return `
+                <div class="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
+                    <div class="flex items-center gap-2 mb-3">
+                        <span class="bg-amber-400 text-amber-900 text-xs font-bold px-3 py-1 rounded-full">${wd.week}</span>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2 text-center">
+                        <div>
+                            <p class="text-xs text-slate-400 mb-1">총 예약 (2025)</p>
+                            <p class="text-lg font-bold text-slate-700">${Math.round(t2025).toLocaleString()}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-400 mb-1">총 예약 (2026)</p>
+                            <p class="text-lg font-bold text-blue-600">${Math.round(t2026).toLocaleString()}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-400 mb-1">성장률</p>
+                            <p class="text-lg font-bold ${grColor}">${grSign}${gr}%</p>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
 
-            // 3주 비교 차트 렌더링
-            renderMultiWeekChart('shortHaulChart', weekData, 'se_asia', 'se_asia');
-            renderMultiWeekChart('neAsiaChart', weekData, 'ne_asia', 'ne_asia');
-            renderMultiWeekChart('longHaulChart', weekData, 'long_haul', 'long_haul');
-
-            // 테이블과 인사이트는 최근 주차 기준
-            renderTables(latestData);
-            try { generateInsights(latestData); } catch (e) { console.error(e); }
-        }
-
-        function renderMultiWeekChart(canvasId, weekData, category, instanceKey) {
-            // 최근 주차 기준으로 노선 순서 결정 (2026 예약인원 내림차순)
-            const latestCatData = weekData[weekData.length - 1].data
-                .filter(d => d.category === category)
-                .sort((a, b) => b.v2026 - a.v2026);
-
-            const routes = latestCatData.map(d => d.route);
-
-            // 2025 기준선: 최근 주차의 2025 데이터 (회색)
-            const ref2025 = routes.map(route => {
-                const found = latestCatData.find(d => d.route === route);
-                return found ? found.v2025 : 0;
-            });
-
-            // 각 주차별 2026 색상: 연파랑 → 중파랑 → 진파랑 (시간 흐름)
-            const colors2026 = ['#93C5FD', '#2563EB', '#1E3A8A'];
-
-            const datasets = [
-                {
-                    label: '2025년 (기준)',
-                    data: ref2025,
-                    backgroundColor: '#CBD5E1',
-                    borderRadius: 4
-                },
-                ...weekData.map((wd, idx) => {
-                    const catData = wd.data.filter(d => d.category === category);
-                    const vals = routes.map(route => {
-                        const found = catData.find(d => d.route === route);
-                        return found ? found.v2026 : 0;
-                    });
-                    return {
-                        label: `2026 ${wd.week}`,
-                        data: vals,
-                        backgroundColor: colors2026[idx % colors2026.length],
-                        borderRadius: 4
-                    };
-                })
+            // ── 2. 지역별 섹션 HTML 생성 ─────────────────────────────
+            const regions = [
+                { key: 'se_asia',   label: '동남아', badgeClass: 'bg-blue-600',   sectionBg: 'bg-blue-50',   borderColor: 'border-blue-500' },
+                { key: 'ne_asia',   label: '동북아', badgeClass: 'bg-teal-600',   sectionBg: 'bg-teal-50',   borderColor: 'border-teal-500' },
+                { key: 'long_haul', label: '장거리', badgeClass: 'bg-indigo-600', sectionBg: 'bg-indigo-50', borderColor: 'border-indigo-500' }
             ];
 
-            const ctx = document.getElementById(canvasId).getContext('2d');
-            if (chartInstances[instanceKey]) {
-                chartInstances[instanceKey].destroy();
-            }
-            chartInstances[instanceKey] = new Chart(ctx, {
+            const regionsHTML = regions.map(region => {
+                // 최근 주차 기준 노선 순서 (2026 내림차순)
+                const latestCatData = weekData[weekData.length - 1].data
+                    .filter(d => d.category === region.key)
+                    .sort((a, b) => b.v2026 - a.v2026);
+
+                // 주차별 차트 패널
+                const chartPanels = weekData.map((wd, idx) => {
+                    const chartId = `mw-chart-${region.key}-${idx}`;
+                    return `
+                    <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200">
+                        <p class="text-sm font-semibold text-slate-500 mb-2">📅 ${wd.week} — 2025년 vs 2026년 비교</p>
+                        <div class="relative h-72 w-full"><canvas id="${chartId}"></canvas></div>
+                    </div>`;
+                }).join('');
+
+                // 3주 트렌드 테이블
+                const trendTable = buildTrendTable(weekData, region.key, latestCatData);
+
+                return `
+                <div class="border-t border-slate-200 pt-8">
+                    <div class="flex items-center gap-3 mb-5">
+                        <span class="${region.badgeClass} text-white text-lg font-bold px-4 py-2 rounded-lg shadow-sm">${region.label}</span>
+                        <h3 class="text-xl font-bold text-slate-700">노선 예약 현황</h3>
+                    </div>
+                    <div class="space-y-4 mb-6">${chartPanels}</div>
+                    ${trendTable}
+                </div>`;
+            }).join('');
+
+            // DOM에 삽입
+            mwView.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">${summaryCards}</div>
+                ${regionsHTML}`;
+
+            // ── 3. 차트 렌더링 (DOM 삽입 후) ─────────────────────────
+            regions.forEach(region => {
+                const latestCatData = weekData[weekData.length - 1].data
+                    .filter(d => d.category === region.key)
+                    .sort((a, b) => b.v2026 - a.v2026);
+                weekData.forEach((wd, idx) => {
+                    const chartId = `mw-chart-${region.key}-${idx}`;
+                    renderSingleWeekMiniChart(chartId, wd, region.key, latestCatData, `${region.key}-${idx}`);
+                });
+            });
+        }
+
+        // 주차 하나의 2025 vs 2026 막대차트
+        function renderSingleWeekMiniChart(canvasId, weekDataItem, category, routeOrder, instanceKey) {
+            const routes = routeOrder.map(d => d.route);
+            const catData = weekDataItem.data.filter(d => d.category === category);
+
+            const vals2025 = routes.map(route => {
+                const f = catData.find(d => d.route === route);
+                return f ? f.v2025 : 0;
+            });
+            const vals2026 = routes.map(route => {
+                const f = catData.find(d => d.route === route);
+                return f ? f.v2026 : 0;
+            });
+
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+
+            multiChartInstances[instanceKey] = new Chart(canvas.getContext('2d'), {
                 type: 'bar',
-                data: { labels: routes, datasets },
+                data: {
+                    labels: routes,
+                    datasets: [
+                        { label: '2025년', data: vals2025, backgroundColor: '#93C5FD', borderRadius: 4 },
+                        { label: '2026년', data: vals2026, backgroundColor: '#1E40AF', borderRadius: 4 }
+                    ]
+                },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
@@ -1005,12 +1056,76 @@
                         y: {
                             beginAtZero: true,
                             grid: { color: '#f1f5f9' },
-                            ticks: { callback: function (value) { if (value % 1 === 0) return value.toLocaleString(); } }
+                            ticks: { callback: v => v % 1 === 0 ? v.toLocaleString() : '' }
                         },
                         x: { grid: { display: false } }
                     }
                 }
             });
+        }
+
+        // 3주 트렌드 테이블 생성
+        function buildTrendTable(weekData, category, latestCatData) {
+            const routes = latestCatData.map(d => d.route);
+            const weekLabels = weekData.map(wd => wd.week);
+
+            const headerWeeks = weekLabels.map((w, i) => {
+                const shades = ['bg-blue-100 text-blue-800', 'bg-blue-200 text-blue-900', 'bg-blue-800 text-white'];
+                return `<th class="px-2 py-2 whitespace-nowrap"><span class="${shades[i % 3]} text-xs font-bold px-2 py-0.5 rounded-full">${w}</span><br><span class="text-xs font-normal text-slate-500 normal-case">2026년</span></th>`;
+            }).join('');
+
+            const rows = routes.map(route => {
+                const ref2025 = latestCatData.find(d => d.route === route)?.v2025 || 0;
+                const weekVals = weekData.map(wd => {
+                    const f = wd.data.filter(d => d.category === category).find(d => d.route === route);
+                    return f ? f.v2026 : 0;
+                });
+
+                const latestVal = weekVals[weekVals.length - 1];
+                const yoyDiff = latestVal - ref2025;
+                const yoyRate = ref2025 ? ((yoyDiff / ref2025) * 100).toFixed(1) : (latestVal > 0 ? 'New' : '0.0');
+                const yoyColor = yoyDiff >= 0 ? 'text-emerald-600' : 'text-red-500';
+                const yoySign = yoyDiff > 0 ? '+' : '';
+
+                const weekCells = weekVals.map((val, idx) => {
+                    let arrow = '';
+                    if (idx > 0) {
+                        if (val > weekVals[idx - 1]) arrow = '<span class="text-blue-500 ml-1 text-xs">▲</span>';
+                        else if (val < weekVals[idx - 1]) arrow = '<span class="text-red-400 ml-1 text-xs">▼</span>';
+                        else arrow = '<span class="text-slate-300 ml-1 text-xs">━</span>';
+                    }
+                    const bg = val > ref2025 ? 'text-blue-700 font-medium' : val < ref2025 ? 'text-slate-600' : 'text-slate-500';
+                    return `<td class="px-2 py-2 ${bg}">${Math.round(val).toLocaleString()}${arrow}</td>`;
+                }).join('');
+
+                const yoyDisplay = typeof yoyRate === 'string' && yoyRate === 'New'
+                    ? `<span class="text-purple-600 font-bold">New</span>`
+                    : `<span class="font-bold ${yoyColor}">${yoySign}${yoyRate}%</span>`;
+
+                return `
+                <tr class="bg-white border-b hover:bg-slate-50">
+                    <td class="px-3 py-2 font-medium text-slate-900">${route}</td>
+                    <td class="px-2 py-2 text-slate-500">${Math.round(ref2025).toLocaleString()}</td>
+                    ${weekCells}
+                    <td class="px-2 py-2 text-right">${yoyDisplay}</td>
+                </tr>`;
+            }).join('');
+
+            return `
+            <div class="bg-slate-50 rounded-xl p-5 border border-slate-200 overflow-x-auto">
+                <h4 class="text-sm font-semibold mb-3 text-slate-600">📊 3주간 2026년 예약 추이 &nbsp;<span class="text-xs font-normal text-slate-400">(▲▼ = 전주 대비 증감 / 전년대비는 최근 주차 기준)</span></h4>
+                <table class="min-w-full text-sm text-left text-slate-600">
+                    <thead class="text-xs text-slate-700 uppercase bg-slate-200">
+                        <tr>
+                            <th class="px-3 py-2">노선</th>
+                            <th class="px-2 py-2">2025 (기준)</th>
+                            ${headerWeeks}
+                            <th class="px-2 py-2 text-right">전년대비</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>`;
         }
     </script>
 </body>
