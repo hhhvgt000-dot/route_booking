@@ -989,7 +989,7 @@
         }
 
         function renderSumDashboard() {
-            const mode = dataSourceSelect.value;
+            const mode = document.getElementById('data-source-select').value;
             const aggregated = getAggregated3WeekData(currentMultiWeekDatasets, mode);
             renderDashboard(aggregated);
         }
