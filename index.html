@@ -96,6 +96,16 @@
                 </div>
             </div>
 
+            <!-- 3주 모드 서브 메뉴 (합산 / 자세히 보기) -->
+            <div id="multi-week-menu" class="hidden flex justify-center space-x-3 p-2 bg-slate-200/50 rounded-xl max-w-md mx-auto mb-4">
+                <button id="mw-sum-btn" class="flex-1 text-center font-bold py-2.5 px-5 rounded-lg transition text-sm whitespace-nowrap bg-blue-600 text-white shadow-sm cursor-pointer">
+                    합산
+                </button>
+                <button id="mw-detail-btn" class="flex-1 text-center font-bold py-2.5 px-5 rounded-lg transition text-sm whitespace-nowrap bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer">
+                    자세히 보기
+                </button>
+            </div>
+
             <!-- Single-week 뷰 (기본 표시) -->
             <div id="single-week-view" class="space-y-8">
 
@@ -611,10 +621,11 @@
 
             weekSelect.addEventListener('change', (e) => {
                 // 멀티위크 모드 해제 → 싱글 뷰로 전환
-                if (currentViewMode === 'multi3') {
+                if (currentViewMode.startsWith('multi3')) {
                     currentViewMode = 'single';
                     currentMultiWeekDatasets = null;
-                    recent3WeeksBtn.classList.remove('ring-4', 'ring-amber-300');
+                    recent3WeeksBtn.classList.remove('ring-4', 'ring-teal-300');
+                    document.getElementById('multi-week-menu').classList.add('hidden');
                     // 멀티위크 차트 인스턴스 정리
                     Object.values(multiChartInstances).forEach(c => c && c.destroy());
                     multiChartInstances = {};
@@ -627,7 +638,11 @@
 
             dataSourceSelect.addEventListener('change', (e) => {
                 const mode = e.target.value;
-                if (currentViewMode === 'multi3' && currentMultiWeekDatasets) {
+                if (currentViewMode === 'multi3_sum' && currentMultiWeekDatasets) {
+                    renderSumDashboard();
+                    return;
+                }
+                if (currentViewMode === 'multi3_detail' && currentMultiWeekDatasets) {
                     renderMultiWeekDashboard(currentMultiWeekDatasets, mode);
                     return;
                 }
@@ -656,16 +671,20 @@
                 const recentWeeks = filteredWeeks.slice(-3);
 
                 weekSelect.value = '';
-                currentViewMode = 'multi3';
-                recent3WeeksBtn.classList.add('ring-4', 'ring-amber-300');
+                currentViewMode = 'multi3_sum'; // 기본은 합산 뷰
+                recent3WeeksBtn.classList.add('ring-4', 'ring-teal-300');
 
                 // 헤더 업데이트
-                mainTitle.innerHTML = `최근 3주 예약현황 <span class="text-xl font-normal text-blue-200 ml-2" id="sub-title"></span>`;
-                noticeText.textContent = `최근 3주 (${recentWeeks.join(' / ')}) 예약 현황을 비교합니다.`;
+                mainTitle.innerHTML = `최근 3주 합산 예약현황 <span class="text-xl font-normal text-blue-200 ml-2" id="sub-title"></span>`;
+                noticeText.textContent = `최근 3주 (${recentWeeks.join(' / ')}) 예약 현황의 합산 데이터입니다.`;
 
-                // 뷰 전환
-                document.getElementById('single-week-view').classList.add('hidden');
-                document.getElementById('multi-week-view').classList.remove('hidden');
+                // 서브 메뉴 보이기
+                document.getElementById('multi-week-menu').classList.remove('hidden');
+                updateSubMenuButtons();
+
+                // 뷰 전환 (합산 뷰는 single-week-view 사용)
+                document.getElementById('single-week-view').classList.remove('hidden');
+                document.getElementById('multi-week-view').classList.add('hidden');
 
                 try {
                     const allDatasets = await Promise.all(
@@ -681,17 +700,65 @@
                     );
 
                     currentMultiWeekDatasets = allDatasets;
-                    renderMultiWeekDashboard(allDatasets, dataSourceSelect.value);
+                    renderSumDashboard();
 
                 } catch (error) {
                     console.error('최근 3주 로드 오류:', error);
                     alert('최근 3주 데이터를 불러오는 중 오류가 발생했습니다.');
-                    currentViewMode = 'single';
-                    recent3WeeksBtn.classList.remove('ring-4', 'ring-amber-300');
-                    document.getElementById('single-week-view').classList.remove('hidden');
-                    document.getElementById('multi-week-view').classList.add('hidden');
+                    resetToSingleWeek();
                 }
             });
+
+            // 서브 메뉴 버튼 리스너
+            document.getElementById('mw-sum-btn').addEventListener('click', () => {
+                if (currentViewMode === 'multi3_sum') return;
+                currentViewMode = 'multi3_sum';
+                updateSubMenuButtons();
+
+                const filteredWeeks = existingWeeks.filter(w => !w.includes('전체'));
+                const recentWeeks = filteredWeeks.slice(-3);
+                mainTitle.innerHTML = `최근 3주 합산 예약현황 <span class="text-xl font-normal text-blue-200 ml-2" id="sub-title"></span>`;
+                noticeText.textContent = `최근 3주 (${recentWeeks.join(' / ')}) 예약 현황의 합산 데이터입니다.`;
+
+                document.getElementById('multi-week-view').classList.add('hidden');
+                document.getElementById('single-week-view').classList.remove('hidden');
+                renderSumDashboard();
+            });
+
+            document.getElementById('mw-detail-btn').addEventListener('click', () => {
+                if (currentViewMode === 'multi3_detail') return;
+                currentViewMode = 'multi3_detail';
+                updateSubMenuButtons();
+
+                const filteredWeeks = existingWeeks.filter(w => !w.includes('전체'));
+                const recentWeeks = filteredWeeks.slice(-3);
+                mainTitle.innerHTML = `최근 3주 예약현황 <span class="text-xl font-normal text-blue-200 ml-2" id="sub-title"></span>`;
+                noticeText.textContent = `최근 3주 (${recentWeeks.join(' / ')}) 예약 현황을 비교합니다.`;
+
+                document.getElementById('single-week-view').classList.add('hidden');
+                document.getElementById('multi-week-view').classList.remove('hidden');
+                renderMultiWeekDashboard(currentMultiWeekDatasets, dataSourceSelect.value);
+            });
+
+            function updateSubMenuButtons() {
+                const sumBtn = document.getElementById('mw-sum-btn');
+                const detailBtn = document.getElementById('mw-detail-btn');
+                if (currentViewMode === 'multi3_sum') {
+                    sumBtn.className = "flex-1 text-center font-bold py-2.5 px-5 rounded-lg transition text-sm whitespace-nowrap bg-blue-600 text-white shadow-sm cursor-pointer";
+                    detailBtn.className = "flex-1 text-center font-bold py-2.5 px-5 rounded-lg transition text-sm whitespace-nowrap bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer";
+                } else {
+                    sumBtn.className = "flex-1 text-center font-bold py-2.5 px-5 rounded-lg transition text-sm whitespace-nowrap bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer";
+                    detailBtn.className = "flex-1 text-center font-bold py-2.5 px-5 rounded-lg transition text-sm whitespace-nowrap bg-blue-600 text-white shadow-sm cursor-pointer";
+                }
+            }
+
+            function resetToSingleWeek() {
+                currentViewMode = 'single';
+                recent3WeeksBtn.classList.remove('ring-4', 'ring-teal-300');
+                document.getElementById('multi-week-menu').classList.add('hidden');
+                document.getElementById('single-week-view').classList.remove('hidden');
+                document.getElementById('multi-week-view').classList.add('hidden');
+            }
 
             // 처음 접속 시에는 선택된 주차가 없으므로 빈 화면으로 시작
             renderDashboard([]);
@@ -919,6 +986,32 @@
             if (longContainer) longContainer.innerHTML = getInsightHTML('long_haul', '장거리');
         }
 
+        function getAggregated3WeekData(datasets, mode) {
+            const routeMap = {};
+            datasets.forEach(d => {
+                const list = d[mode] || [];
+                list.forEach(item => {
+                    if (!routeMap[item.route]) {
+                        routeMap[item.route] = {
+                            route: item.route,
+                            v2025: 0,
+                            v2026: 0,
+                            category: item.category
+                        };
+                    }
+                    routeMap[item.route].v2025 += item.v2025;
+                    routeMap[item.route].v2026 += item.v2026;
+                });
+            });
+            return Object.values(routeMap);
+        }
+
+        function renderSumDashboard() {
+            const mode = dataSourceSelect.value;
+            const aggregated = getAggregated3WeekData(currentMultiWeekDatasets, mode);
+            renderDashboard(aggregated);
+        }
+
         // =============================================
         // 최근 3주 비교 렌더링 함수 (동적 뷰 생성)
         // =============================================
@@ -973,20 +1066,25 @@
             ];
 
             const regionsHTML = regions.map(region => {
-                // 최근 주차 기준 노선 순서 (2026 내림차순)
+                // 최근 주차 기준 노선 순서 (2026 예약인원 내림차순)
                 const latestCatData = weekData[weekData.length - 1].data
                     .filter(d => d.category === region.key)
                     .sort((a, b) => b.v2026 - a.v2026);
 
-                // 주차별 차트 패널
-                const chartPanels = weekData.map((wd, idx) => {
-                    const chartId = `mw-chart-${region.key}-${idx}`;
-                    return `
+                const chartId2026 = `mw-chart-2026-${region.key}`;
+                const chartIdDiff = `mw-chart-diff-${region.key}`;
+                
+                const chartPanels = `
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                     <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200">
-                        <p class="text-sm font-semibold text-slate-500 mb-2">📅 ${wd.week} — 2025년 vs 2026년 비교</p>
-                        <div class="relative h-72 w-full"><canvas id="${chartId}"></canvas></div>
-                    </div>`;
-                }).join('');
+                        <p class="text-sm font-semibold text-slate-600 mb-2">📈 2026년 예약인원 추이</p>
+                        <div class="relative h-80 w-full"><canvas id="${chartId2026}"></canvas></div>
+                    </div>
+                    <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200">
+                        <p class="text-sm font-semibold text-slate-600 mb-2">📊 전년대비 증감(차이) 추이</p>
+                        <div class="relative h-80 w-full"><canvas id="${chartIdDiff}"></canvas></div>
+                    </div>
+                </div>`;
 
                 // 3주 트렌드 테이블
                 const trendTable = buildTrendTable(weekData, region.key, latestCatData);
@@ -997,14 +1095,14 @@
                         <span class="${region.badgeClass} text-white text-lg font-bold px-4 py-2 rounded-lg shadow-sm">${region.label}</span>
                         <h3 class="text-xl font-bold text-slate-700">노선 예약 현황</h3>
                     </div>
-                    <div class="space-y-4 mb-6">${chartPanels}</div>
+                    ${chartPanels}
                     ${trendTable}
                 </div>`;
             }).join('');
 
             // DOM에 삽입
             mwView.innerHTML = `
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">${summaryCards}</div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">${summaryCards}</div>
                 ${regionsHTML}`;
 
             // ── 3. 차트 렌더링 (DOM 삽입 후) ─────────────────────────
@@ -1012,9 +1110,88 @@
                 const latestCatData = weekData[weekData.length - 1].data
                     .filter(d => d.category === region.key)
                     .sort((a, b) => b.v2026 - a.v2026);
-                weekData.forEach((wd, idx) => {
-                    const chartId = `mw-chart-${region.key}-${idx}`;
-                    renderSingleWeekMiniChart(chartId, wd, region.key, latestCatData, `${region.key}-${idx}`);
+                renderDetailedCharts(region.key, weekData, latestCatData);
+            });
+        }
+
+        // 주차별 2026년 예약인원 & 차이(증감) 2개 차트 렌더링
+        function renderDetailedCharts(regionKey, weekData, latestCatData) {
+            const routes = latestCatData.map(d => d.route);
+            const colors = ['#93C5FD', '#3B82F6', '#1D4ED8']; // 연파랑 -> 파랑 -> 진파랑
+
+            // 1. 2026년 예약인원 차트
+            const datasets2026 = weekData.map((wd, idx) => {
+                const catData = wd.data.filter(d => d.category === regionKey);
+                const vals = routes.map(route => {
+                    const found = catData.find(d => d.route === route);
+                    return found ? found.v2026 : 0;
+                });
+                return {
+                    label: wd.week,
+                    data: vals,
+                    backgroundColor: colors[idx % colors.length],
+                    borderRadius: 4
+                };
+            });
+
+            const ctx2026 = document.getElementById(`mw-chart-2026-${regionKey}`).getContext('2d');
+            multiChartInstances[`2026-${regionKey}`] = new Chart(ctx2026, {
+                type: 'bar',
+                data: { labels: routes, datasets: datasets2026 },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top' },
+                        tooltip: { mode: 'index', intersect: false }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: '#f1f5f9' },
+                            ticks: { callback: v => v % 1 === 0 ? v.toLocaleString() : '' }
+                        },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+
+            // 2. 차이(증감 = 2026 - 2025) 차트
+            const datasetsDiff = weekData.map((wd, idx) => {
+                const catData = wd.data.filter(d => d.category === regionKey);
+                const vals = routes.map(route => {
+                    const found = catData.find(d => d.route === route);
+                    return found ? (found.v2026 - found.v2025) : 0;
+                });
+                return {
+                    label: wd.week,
+                    data: vals,
+                    backgroundColor: colors[idx % colors.length],
+                    borderRadius: 4
+                };
+            });
+
+            const ctxDiff = document.getElementById(`mw-chart-diff-${regionKey}`).getContext('2d');
+            multiChartInstances[`diff-${regionKey}`] = new Chart(ctxDiff, {
+                type: 'bar',
+                data: { labels: routes, datasets: datasetsDiff },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top' },
+                        tooltip: { mode: 'index', intersect: false }
+                    },
+                    scales: {
+                        y: {
+                            grid: { color: '#f1f5f9' },
+                            ticks: { callback: v => v % 1 === 0 ? v.toLocaleString() : '' }
+                        },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+        }ion.key, latestCatData, `${region.key}-${idx}`);
                 });
             });
         }
@@ -1064,12 +1241,72 @@
             });
         }
 
+        function getRouteClassification(weekData, category, route) {
+            let allIncrease = true;
+            let allDecrease = true;
+
+            for (let wd of weekData) {
+                const f = wd.data.filter(d => d.category === category).find(d => d.route === route);
+                const diff = f ? (f.v2026 - f.v2025) : 0;
+                if (diff <= 0) allIncrease = false;
+                if (diff >= 0) allDecrease = false;
+            }
+
+            if (allIncrease) return '3주 연속 증가';
+            if (allDecrease) return '3주 연속 감소';
+            return '변동';
+        }
+
         // 3주 트렌드 테이블 생성
         function buildTrendTable(weekData, category, latestCatData) {
             const routes = latestCatData.map(d => d.route);
             const weekLabels = weekData.map(wd => wd.week);
 
-            const rows = routes.map(route => {
+            // 각 노선의 분류 및 차이값 미리 계산
+            const routeDetails = routes.map(route => {
+                const classification = getRouteClassification(weekData, category, route);
+                const diffs = weekData.map(wd => {
+                    const f = wd.data.filter(d => d.category === category).find(d => d.route === route);
+                    return f ? (f.v2026 - f.v2025) : 0;
+                });
+                return { route, classification, diffs };
+            });
+
+            // 정렬: 1. 분류 순서 (3주 연속 감소 -> 변동 -> 3주 연속 증가)
+            //       2. 주차별 차이값 오름차순 (diffs[0] -> diffs[1] -> diffs[2])
+            const classOrder = {
+                '3주 연속 감소': 1,
+                '변동': 2,
+                '3주 연속 증가': 3
+            };
+
+            routeDetails.sort((a, b) => {
+                if (classOrder[a.classification] !== classOrder[b.classification]) {
+                    return classOrder[a.classification] - classOrder[b.classification];
+                }
+                for (let i = 0; i < a.diffs.length; i++) {
+                    if (a.diffs[i] !== b.diffs[i]) {
+                        return a.diffs[i] - b.diffs[i];
+                    }
+                }
+                return 0;
+            });
+
+            // rowspan 계산용 맵 생성
+            const rowspanMap = [];
+            let i = 0;
+            while (i < routeDetails.length) {
+                let j = i + 1;
+                while (j < routeDetails.length && routeDetails[j].classification === routeDetails[i].classification) {
+                    j++;
+                }
+                rowspanMap[i] = j - i;
+                i = j;
+            }
+
+            const rows = routeDetails.map((details, idx) => {
+                const route = details.route;
+                
                 const cells = weekData.map(wd => {
                     const f = wd.data.filter(d => d.category === category).find(d => d.route === route);
                     const v25 = f ? f.v2025 : 0;
@@ -1085,8 +1322,24 @@
                     `;
                 }).join('');
 
+                const clsSpan = rowspanMap[idx];
+                let clsCell = '';
+                if (clsSpan) {
+                    let bgClass = 'bg-slate-50';
+                    let textClass = 'text-slate-500';
+                    if (details.classification === '3주 연속 증가') {
+                        bgClass = 'bg-emerald-50';
+                        textClass = 'text-emerald-700 font-bold';
+                    } else if (details.classification === '3주 연속 감소') {
+                        bgClass = 'bg-rose-50';
+                        textClass = 'text-rose-700 font-bold';
+                    }
+                    clsCell = `<td rowspan="${clsSpan}" class="${bgClass} ${textClass} text-center align-middle border border-slate-200 text-xs font-semibold px-2 py-2">${details.classification}</td>`;
+                }
+
                 return `
                 <tr class="bg-white hover:bg-slate-50 border-b border-slate-200">
+                    ${clsCell}
                     <td class="px-3 py-2 font-medium text-slate-900 border border-slate-200 sticky left-0 bg-white hover:bg-slate-50 z-10">${route}</td>
                     ${cells}
                 </tr>`;
@@ -1098,6 +1351,7 @@
                 <table class="min-w-full text-sm border-collapse border border-slate-200">
                     <thead class="text-xs text-slate-700 uppercase bg-slate-200">
                         <tr>
+                            <th rowspan="2" class="px-2 py-2 text-center align-middle border border-slate-300 bg-slate-200">분류</th>
                             <th rowspan="2" class="px-3 py-2 text-left align-middle border border-slate-300 bg-slate-200 sticky left-0 z-20">노선</th>
                             <th colspan="3" class="px-2 py-1 text-center border border-slate-300 bg-blue-100/50 text-blue-900">${weekLabels[0]}</th>
                             <th colspan="3" class="px-2 py-1 text-center border border-slate-300 bg-teal-100/50 text-teal-900">${weekLabels[1]}</th>
