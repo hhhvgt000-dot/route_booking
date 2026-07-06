@@ -688,6 +688,9 @@
                     const allDatasets = await Promise.all(
                         recentWeeks.map(async (week) => {
                             const response = await fetch(`${week}.json`);
+                            if (!response.ok) {
+                                throw new Error(`'${week}.json' 파일을 찾을 수 없거나 불러올 수 없습니다. (상태 코드: ${response.status})`);
+                            }
                             const data = await response.json();
                             return {
                                 week,
@@ -702,7 +705,7 @@
 
                 } catch (error) {
                     console.error('최근 3주 로드 오류:', error);
-                    alert('최근 3주 데이터를 불러오는 중 오류가 발생했습니다.');
+                    alert(`최근 3주 데이터를 불러오는 중 오류가 발생했습니다.\n\n상세 오류: ${error.message}`);
                     resetToSingleWeek();
                 }
             });
