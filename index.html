@@ -80,7 +80,7 @@
                         <!-- Options will be populated automatically -->
                     </select>
                     <button id="recent-3weeks-btn"
-                        class="bg-slate-600 hover:bg-slate-700 text-white text-base font-bold py-3 px-5 rounded-lg shadow-sm transition whitespace-nowrap">
+                        class="bg-slate-600 hover:bg-slate-700 text-white text-base font-bold py-3 px-5 rounded-lg shadow-sm transition whitespace-nowrap cursor-pointer">
                         최근 3주 조회
                     </button>
                 </div>
@@ -96,12 +96,10 @@
                 </div>
             </div>
 
-            <!-- 3주 모드 서브 메뉴 (합산 / 자세히 보기) -->
-            <div id="multi-week-menu" class="hidden flex justify-center space-x-3 p-2 bg-slate-200/50 rounded-xl max-w-md mx-auto mb-4">
-                <button id="mw-sum-btn" class="flex-1 text-center font-bold py-2.5 px-5 rounded-lg transition text-sm whitespace-nowrap bg-blue-600 text-white shadow-sm cursor-pointer">
-                    합산
-                </button>
-                <button id="mw-detail-btn" class="flex-1 text-center font-bold py-2.5 px-5 rounded-lg transition text-sm whitespace-nowrap bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer">
+            <!-- 자세히 보기 토글 버튼 (최근 3주 모드 시 노출) -->
+            <div id="detail-toggle-container" class="hidden flex justify-start mb-4">
+                <button id="mw-detail-btn"
+                    class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-base font-bold py-2.5 px-6 rounded-lg shadow-sm transition whitespace-nowrap cursor-pointer">
                     자세히 보기
                 </button>
             </div>
@@ -622,16 +620,11 @@
             weekSelect.addEventListener('change', (e) => {
                 // 멀티위크 모드 해제 → 싱글 뷰로 전환
                 if (currentViewMode.startsWith('multi3')) {
-                    currentViewMode = 'single';
-                    currentMultiWeekDatasets = null;
-                    recent3WeeksBtn.classList.remove('ring-4', 'ring-teal-300');
-                    document.getElementById('multi-week-menu').classList.add('hidden');
+                    resetToSingleWeek();
                     // 멀티위크 차트 인스턴스 정리
                     Object.values(multiChartInstances).forEach(c => c && c.destroy());
                     multiChartInstances = {};
                     document.getElementById('multi-week-view').innerHTML = '';
-                    document.getElementById('multi-week-view').classList.add('hidden');
-                    document.getElementById('single-week-view').classList.remove('hidden');
                 }
                 loadWeekData(e.target.value);
             });
@@ -656,6 +649,9 @@
 
             // 최근 3주 버튼 클릭 핸들러
             const recent3WeeksBtn = document.getElementById('recent-3weeks-btn');
+            const detailBtn = document.getElementById('mw-detail-btn');
+            const detailToggleContainer = document.getElementById('detail-toggle-container');
+
             recent3WeeksBtn.addEventListener('click', async () => {
                 if (existingWeeks.length === 0) {
                     alert('주차 데이터를 먼저 불러와야 합니다.');
@@ -672,17 +668,19 @@
 
                 weekSelect.value = '';
                 currentViewMode = 'multi3_sum'; // 기본은 합산 뷰
-                recent3WeeksBtn.classList.add('ring-4', 'ring-teal-300');
+                
+                // 최근 3주 조회 버튼 활성화 색상 변경 (teal)
+                recent3WeeksBtn.className = "bg-teal-600 hover:bg-teal-700 text-white text-base font-bold py-3 px-5 rounded-lg shadow-sm transition whitespace-nowrap cursor-pointer ring-4 ring-teal-100";
+
+                // 자세히 보기 토글 컨테이너 노출 및 버튼 초기화
+                detailToggleContainer.classList.remove('hidden');
+                detailBtn.className = "bg-slate-200 hover:bg-slate-300 text-slate-700 text-base font-bold py-2.5 px-6 rounded-lg shadow-sm transition whitespace-nowrap cursor-pointer";
 
                 // 헤더 업데이트
-                mainTitle.innerHTML = `최근 3주 합산 예약현황 <span class="text-xl font-normal text-blue-200 ml-2" id="sub-title"></span>`;
-                noticeText.textContent = `최근 3주 (${recentWeeks.join(' / ')}) 예약 현황의 합산 데이터입니다.`;
+                mainTitle.innerHTML = `최근 3주 예약현황 <span class="text-xl font-normal text-blue-200 ml-2" id="sub-title"></span>`;
+                noticeText.textContent = `최근 3주 (${recentWeeks.join(' / ')}) 예약 현황입니다.`;
 
-                // 서브 메뉴 보이기
-                document.getElementById('multi-week-menu').classList.remove('hidden');
-                updateSubMenuButtons();
-
-                // 뷰 전환 (합산 뷰는 single-week-view 사용)
+                // 뷰 전환
                 document.getElementById('single-week-view').classList.remove('hidden');
                 document.getElementById('multi-week-view').classList.add('hidden');
 
@@ -709,53 +707,34 @@
                 }
             });
 
-            // 서브 메뉴 버튼 리스너
-            document.getElementById('mw-sum-btn').addEventListener('click', () => {
-                if (currentViewMode === 'multi3_sum') return;
-                currentViewMode = 'multi3_sum';
-                updateSubMenuButtons();
-
+            // 자세히 보기 토글 버튼 리스너
+            detailBtn.addEventListener('click', () => {
                 const filteredWeeks = existingWeeks.filter(w => !w.includes('전체'));
                 const recentWeeks = filteredWeeks.slice(-3);
-                mainTitle.innerHTML = `최근 3주 합산 예약현황 <span class="text-xl font-normal text-blue-200 ml-2" id="sub-title"></span>`;
-                noticeText.textContent = `최근 3주 (${recentWeeks.join(' / ')}) 예약 현황의 합산 데이터입니다.`;
 
-                document.getElementById('multi-week-view').classList.add('hidden');
-                document.getElementById('single-week-view').classList.remove('hidden');
-                renderSumDashboard();
-            });
-
-            document.getElementById('mw-detail-btn').addEventListener('click', () => {
-                if (currentViewMode === 'multi3_detail') return;
-                currentViewMode = 'multi3_detail';
-                updateSubMenuButtons();
-
-                const filteredWeeks = existingWeeks.filter(w => !w.includes('전체'));
-                const recentWeeks = filteredWeeks.slice(-3);
-                mainTitle.innerHTML = `최근 3주 예약현황 <span class="text-xl font-normal text-blue-200 ml-2" id="sub-title"></span>`;
-                noticeText.textContent = `최근 3주 (${recentWeeks.join(' / ')}) 예약 현황을 비교합니다.`;
-
-                document.getElementById('single-week-view').classList.add('hidden');
-                document.getElementById('multi-week-view').classList.remove('hidden');
-                renderMultiWeekDashboard(currentMultiWeekDatasets, dataSourceSelect.value);
-            });
-
-            function updateSubMenuButtons() {
-                const sumBtn = document.getElementById('mw-sum-btn');
-                const detailBtn = document.getElementById('mw-detail-btn');
                 if (currentViewMode === 'multi3_sum') {
-                    sumBtn.className = "flex-1 text-center font-bold py-2.5 px-5 rounded-lg transition text-sm whitespace-nowrap bg-blue-600 text-white shadow-sm cursor-pointer";
-                    detailBtn.className = "flex-1 text-center font-bold py-2.5 px-5 rounded-lg transition text-sm whitespace-nowrap bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer";
-                } else {
-                    sumBtn.className = "flex-1 text-center font-bold py-2.5 px-5 rounded-lg transition text-sm whitespace-nowrap bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer";
-                    detailBtn.className = "flex-1 text-center font-bold py-2.5 px-5 rounded-lg transition text-sm whitespace-nowrap bg-blue-600 text-white shadow-sm cursor-pointer";
+                    // 자세히 보기 활성화
+                    currentViewMode = 'multi3_detail';
+                    detailBtn.className = "bg-blue-600 hover:bg-blue-700 text-white text-base font-bold py-2.5 px-6 rounded-lg shadow-sm transition whitespace-nowrap cursor-pointer";
+
+                    document.getElementById('single-week-view').classList.add('hidden');
+                    document.getElementById('multi-week-view').classList.remove('hidden');
+                    renderMultiWeekDashboard(currentMultiWeekDatasets, dataSourceSelect.value);
+                } else if (currentViewMode === 'multi3_detail') {
+                    // 자세히 보기 비활성화 (합산 뷰로 복귀)
+                    currentViewMode = 'multi3_sum';
+                    detailBtn.className = "bg-slate-200 hover:bg-slate-300 text-slate-700 text-base font-bold py-2.5 px-6 rounded-lg shadow-sm transition whitespace-nowrap cursor-pointer";
+
+                    document.getElementById('multi-week-view').classList.add('hidden');
+                    document.getElementById('single-week-view').classList.remove('hidden');
+                    renderSumDashboard();
                 }
-            }
+            });
 
             function resetToSingleWeek() {
                 currentViewMode = 'single';
-                recent3WeeksBtn.classList.remove('ring-4', 'ring-teal-300');
-                document.getElementById('multi-week-menu').classList.add('hidden');
+                recent3WeeksBtn.className = "bg-slate-600 hover:bg-slate-700 text-white text-base font-bold py-3 px-5 rounded-lg shadow-sm transition whitespace-nowrap cursor-pointer";
+                detailToggleContainer.classList.add('hidden');
                 document.getElementById('single-week-view').classList.remove('hidden');
                 document.getElementById('multi-week-view').classList.add('hidden');
             }
@@ -1184,54 +1163,6 @@
                     },
                     scales: {
                         y: {
-                            grid: { color: '#f1f5f9' },
-                            ticks: { callback: v => v % 1 === 0 ? v.toLocaleString() : '' }
-                        },
-                        x: { grid: { display: false } }
-                    }
-                }
-            });
-        }ion.key, latestCatData, `${region.key}-${idx}`);
-                });
-            });
-        }
-
-        // 주차 하나의 2025 vs 2026 막대차트
-        function renderSingleWeekMiniChart(canvasId, weekDataItem, category, routeOrder, instanceKey) {
-            const routes = routeOrder.map(d => d.route);
-            const catData = weekDataItem.data.filter(d => d.category === category);
-
-            const vals2025 = routes.map(route => {
-                const f = catData.find(d => d.route === route);
-                return f ? f.v2025 : 0;
-            });
-            const vals2026 = routes.map(route => {
-                const f = catData.find(d => d.route === route);
-                return f ? f.v2026 : 0;
-            });
-
-            const canvas = document.getElementById(canvasId);
-            if (!canvas) return;
-
-            multiChartInstances[instanceKey] = new Chart(canvas.getContext('2d'), {
-                type: 'bar',
-                data: {
-                    labels: routes,
-                    datasets: [
-                        { label: '2025년', data: vals2025, backgroundColor: '#93C5FD', borderRadius: 4 },
-                        { label: '2026년', data: vals2026, backgroundColor: '#1E40AF', borderRadius: 4 }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { position: 'top' },
-                        tooltip: { mode: 'index', intersect: false }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
                             grid: { color: '#f1f5f9' },
                             ticks: { callback: v => v % 1 === 0 ? v.toLocaleString() : '' }
                         },
